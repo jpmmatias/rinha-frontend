@@ -5,48 +5,52 @@ app.innerHTML = `
   <input id="json-input-file" type="file">Load JSON</button>
 `;
 
-const readAndParseFile = async (file: File): Promise<any> => {
-  const reader = new FileReader();
-  reader.onload = async (e) => {
-    postMessage({ msg: "parse", result: e.target!.result });
-  };
-  reader.readAsText(file);
-};
+const worker = new Worker("./src/ts/worker.ts");
 
-onmessage = async (e) => {
-  const { file, msg, result } = e.data;
-
-  if (msg === "parse") {
-    const json = JSON.parse(result);
-    app.innerHTML = "";
-    app.appendChild(await createTree(json));
+worker.onmessage = (e) => {
+  const { msg, result } = e.data;
+  app.innerHTML = "";
+  if (msg === "parseChunk") {
+    appendChunkToTree(result);
+  } else if (msg === "parseComplete") {
+    console.log("Parse complete");
   }
-  if (msg !== "file") return;
-  await readAndParseFile(file);
+};
+const createTree = (json: any): HTMLUListElement => {
+  const ul = document.createElement("ul");
+  const fragment = document.createDocumentFragment(); // Create a DocumentFragment
+
+  for (const key in json) {
+    const li = document.createElement("li");
+    const span = document.createElement("span");
+    span.innerText = `${key}: `;
+    li.appendChild(span);
+
+    if (typeof json[key] === "object") {
+      // Recursively process nested objects
+      const nestedUl = createTree(json[key]);
+      li.appendChild(nestedUl);
+    } else {
+      const spanValue = document.createElement("span");
+      spanValue.innerText = json[key];
+      li.appendChild(spanValue);
+    }
+
+    fragment.appendChild(li); // Append the li element to the DocumentFragment
+  }
+
+  ul.appendChild(fragment); // Append the DocumentFragment to the ul element
+  return ul;
 };
 
 const input = document.querySelector<HTMLInputElement>("#json-input-file")!;
 input.addEventListener("change", (e) => {
   const file = (e.target as HTMLInputElement).files![0];
   console.log(file);
-  postMessage({ file, msg: "file" });
+  worker.postMessage({ file, msg: "file" });
 });
 
-const createTree = async (json: any): Promise<HTMLUListElement> => {
-  const ul = document.createElement("ul");
-  for (const key in json) {
-    const li = document.createElement("li");
-    const span = document.createElement("span");
-    span.innerText = `${key}: `;
-    li.appendChild(span);
-    if (typeof json[key] === "object") {
-      li.appendChild(await createTree(json[key]));
-    } else {
-      const span = document.createElement("span");
-      span.innerText = json[key];
-      li.appendChild(span);
-    }
-    ul.appendChild(li);
-  }
-  return ul;
+const appendChunkToTree = (jsonChunk: any) => {
+  const ul = createTree(jsonChunk);
+  app.appendChild(ul);
 };
